@@ -9,7 +9,7 @@ import ch.epfl.scala.bsp.schema._
 import com.typesafe.scalalogging.Logger
 import monix.eval.Task
 import monix.execution.{ExecutionModel, Scheduler}
-import org.langmeta.jsonrpc.{BaseProtocolMessage, Services}
+import org.langmeta.jsonrpc.{BaseProtocolMessage, Endpoint, Services}
 import org.langmeta.lsp.{LanguageClient, LanguageServer}
 import org.scalasbt.ipcsocket.UnixDomainSocket
 import org.slf4j.LoggerFactory
@@ -29,8 +29,7 @@ object Bloupe {
     implicit val scheduler: Scheduler = Scheduler(
         pool, ExecutionModel.AlwaysAsyncExecution)
 
-    val cwd = new File(".").getCanonicalFile.toURI
-    println(cwd)
+    val bloopConfigDir = new File("./.bloop-config").getCanonicalFile
 
     val sockdir = Files.createTempDirectory("bsp-")
     val id = java.lang.Long.toString(Random.nextLong(), Character.MAX_RADIX)
@@ -39,8 +38,6 @@ object Bloupe {
     logger.info(s"unix socket file: $sockfile")
 
     val bspCommand = s"bloop bsp --protocol local --socket $sockfile --verbose"
-//    println(s"bsp command:\n$bspCommand")
-
 
     val bspReady = Promise[Unit]()
     val proclog = ProcessLogger.apply { msg =>
@@ -63,22 +60,35 @@ object Bloupe {
 
       val initializeServerReq = endpoints.Build.initialize.request(
         InitializeBuildParams(
-          rootUri = cwd.toString,
+          rootUri = bloopConfigDir.toString,
           Some(BuildClientCapabilities(List("scala")))
         )
       )
 
       val targetsReq = endpoints.Workspace.buildTargets.request(WorkspaceBuildTargetsRequest())
-      val compileReq = endpoints.BuildTarget.compile.request(CompileParams(Seq()))
+
+      import scalapb_circe.JsonFormat._
+      object scalacOptions extends Endpoint[ScalacOptionsParams, ScalacOptions]("buildTarget/scalacOptions")
+
+      object textDocuments extends Endpoint[BuildTargetTextDocumentsParams, BuildTargetTextDocuments]("buildTarget/textDocuments")
 
       val initialized = for {
         init <- initializeServerReq
+        _ = endpoints.Build.initialized.notify(InitializedBuildParams())
         targets <- targetsReq
-        compile <- compileReq
+        targetIds = targets.right.get.targets.flatMap(_.id)
+//        scalacOpts <- scalacOptions.request(ScalacOptionsParams(targetIds))
+        textDocs <- textDocuments.request(BuildTargetTextDocumentsParams(targetIds))
+        compile <- endpoints.BuildTarget.compile.request(CompileParams(targetIds))
       } yield {
-        println(s"~~ init: $init")
-        println(s"~~ targets: ${targets.right.get.targets}")
-        println(s"~~ compile: $compile")
+
+        println("\n------\n")
+        println(s"~~ init: $init\n------\n")
+        println(s"~~ targets: ${targets.right.get.targets}\n------\n")
+//        println(s"~~ scalacOptions: $scalacOpts\n------\n")
+        println(s"~~ textDocs: $textDocs\n------\n")
+        println(s"~~ compile: $compile\n------\n")
+        println("\nXXX------XXX\n")
       }
       Await.ready(initialized.runAsync, 13.seconds)
 
@@ -97,7 +107,7 @@ object Bloupe {
       }
     }
 
-    println("done??")
+    println("done blooping.")
 
   }
 }
