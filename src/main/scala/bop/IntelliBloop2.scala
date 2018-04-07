@@ -4,20 +4,26 @@ import java.io.File
 
 import ch.epfl.scala.bsp.endpoints
 import ch.epfl.scala.bsp.schema.{BuildTargetIdentifier, CompileParams, CompileReport, WorkspaceBuildTargetsRequest}
+import com.typesafe.scalalogging.Logger
 import monix.eval
 import monix.execution.{ExecutionModel, Scheduler}
 import monix.reactive.Consumer
 import org.langmeta.jsonrpc.{BaseProtocolMessage, Response}
 import org.langmeta.lsp.LanguageClient
-import scala.concurrent.duration._
+import org.slf4j.LoggerFactory
 
+import scala.concurrent.duration._
 import scala.concurrent.Await
+
+class IntelliBloop2
 
 object IntelliBloop2 {
 
+  val logger = Logger(LoggerFactory.getLogger(classOf[IntelliBloop2]))
+
   private val msgConsumer = Consumer.foreach[BaseProtocolMessage] { msg =>
     val text = new String(msg.content)
-    println(s"bsp :: $text")
+    logger.info(s"± bsp :: $text")
   }
 
   def targetsRequest(implicit client: LanguageClient) =
@@ -33,9 +39,11 @@ object IntelliBloop2 {
 
     val projectRoot = new File("/Users/jast/playspace/bloopers-bsp").getCanonicalFile
 
+    val targets = Seq(BuildTargetIdentifier("file:///Users/jast/playspace/bloopers-bsp?id=bloopers-bsp"))
+
     def buildTasks(implicit client: LanguageClient) = for {
-      targetsResponse <- targetsRequest
-      targets = targetsResponse.right.get.targets.flatMap(_.id)
+//      targetsResponse <- targetsRequest
+//      targets = targetsResponse.right.get.targets.flatMap(_.id)
       compileResponse <- compileRequest(targets)
     } yield compileResponse
 

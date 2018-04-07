@@ -34,7 +34,7 @@ class BspSession(val messages: ConnectableObservable[BaseProtocolMessage],
     val runningClientServer = startClientServer
 
     val whenDone = Task {
-      logger.info("closing bsp connection")
+      logger.info("!! closing bsp connection")
       connection.cancel()
       runningClientServer.cancel()
     }
