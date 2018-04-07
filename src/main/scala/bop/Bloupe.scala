@@ -2,6 +2,7 @@ package bop
 
 import java.io.File
 import java.nio.file.Files
+import java.util
 import java.util.concurrent.TimeUnit
 
 import ch.epfl.scala.bsp.endpoints
@@ -9,6 +10,7 @@ import ch.epfl.scala.bsp.schema._
 import com.typesafe.scalalogging.Logger
 import monix.eval.Task
 import monix.execution.{ExecutionModel, Scheduler}
+import monix.reactive.{Consumer, Pipe}
 import org.langmeta.jsonrpc.{BaseProtocolMessage, Endpoint, Services}
 import org.langmeta.lsp.{LanguageClient, LanguageServer}
 import org.scalasbt.ipcsocket.UnixDomainSocket
@@ -26,10 +28,10 @@ object Bloupe {
     val logger: Logger = Logger(LoggerFactory.getLogger(getClass.getName))
 
     val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
-    implicit val scheduler: Scheduler = Scheduler(
-        pool, ExecutionModel.AlwaysAsyncExecution)
+    implicit val scheduler: Scheduler = Scheduler(pool, ExecutionModel.AlwaysAsyncExecution)
 
-    val bloopConfigDir = new File("./.bloop-config").getCanonicalFile
+    val base = "/Users/jast/playspace/bloopers-bsp"
+    val bloopConfigDir = new File(base,".bloop-config").getCanonicalFile
 
     val sockdir = Files.createTempDirectory("bsp-")
     val id = java.lang.Long.toString(Random.nextLong(), Character.MAX_RADIX)
@@ -49,7 +51,13 @@ object Bloupe {
 
     val sock = new UnixDomainSocket(sockfile.toString)
     implicit val client = new LanguageClient(sock.getOutputStream, logger)
-    val messages = BaseProtocolMessage.fromInputStream(sock.getInputStream)
+    val messages = BaseProtocolMessage.fromInputStream(sock.getInputStream).replay
+
+    val c = Consumer.foreach[BaseProtocolMessage](m => println("consume bsp :: " + new String(m.content)))
+    messages.consumeWith(c).runAsync
+
+    messages.connect()
+
     val services = Services.empty
     val server = new LanguageServer(messages, client, services, scheduler, logger)
     val runningClientServer = server.startTask
@@ -78,7 +86,7 @@ object Bloupe {
         targets <- targetsReq
         targetIds = targets.right.get.targets.flatMap(_.id)
 //        scalacOpts <- scalacOptions.request(ScalacOptionsParams(targetIds))
-        textDocs <- textDocuments.request(BuildTargetTextDocumentsParams(targetIds))
+//        textDocs <- textDocuments.request(BuildTargetTextDocumentsParams(targetIds))
         compile <- endpoints.BuildTarget.compile.request(CompileParams(targetIds))
       } yield {
 
@@ -86,7 +94,7 @@ object Bloupe {
         println(s"~~ init: $init\n------\n")
         println(s"~~ targets: ${targets.right.get.targets}\n------\n")
 //        println(s"~~ scalacOptions: $scalacOpts\n------\n")
-        println(s"~~ textDocs: $textDocs\n------\n")
+//        println(s"~~ textDocs: $textDocs\n------\n")
         println(s"~~ compile: $compile\n------\n")
         println("\nXXX------XXX\n")
       }

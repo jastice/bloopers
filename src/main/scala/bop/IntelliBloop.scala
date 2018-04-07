@@ -28,7 +28,7 @@ object IntelliBloop {
     implicit val scheduler: Scheduler = Scheduler(
       pool, ExecutionModel.AlwaysAsyncExecution)
 
-    val projectRoot = new File(".").getCanonicalFile
+    val projectRoot = new File("/Users/jast/playspace/bloopers-bsp")
 
     val initClient = initialize(projectRoot).onErrorHandle(err => throw err)
     def targetsReq(implicit client: LanguageClient) =
@@ -40,7 +40,6 @@ object IntelliBloop {
       targets <- targetsReq(client)
     } yield {
       // TODO handle error response
-      println(s"targets: $targets")
       for {
         target <- targets.right.get.targets
       } yield {
@@ -54,7 +53,7 @@ object IntelliBloop {
 
     val result = Await.result(projectTask.runAsync, Duration.Inf)
 
-    println("result: " + projectTask)
+    println("result: " + result)
   }
 
   def initialize(base: File)(implicit scheduler: Scheduler): Task[(Cancelable, LanguageClient)] = {
@@ -70,9 +69,7 @@ object IntelliBloop {
     sockfile.toFile.deleteOnExit()
 
     // TODO abstract build tool specific logic
-    println(s"base: $base")
     val bloopConfigDir = new File(base, ".bloop-config").getCanonicalFile
-    println(s"bloopConfig: $bloopConfigDir")
     assert(bloopConfigDir.exists())
     val bspCommand = s"bloop bsp --protocol local --socket $sockfile --verbose"
 
@@ -96,7 +93,6 @@ object IntelliBloop {
     }
 
     def initializeServerReq(implicit client: LanguageClient) = {
-      println("init request")
       endpoints.Build.initialize.request(
         InitializeBuildParams(
           rootUri = bloopConfigDir.toString,
@@ -105,8 +101,8 @@ object IntelliBloop {
       )
     }
 
-    def sendInitializedNotification(implicit client: LanguageClient): Unit = endpoints.Build.initialized.notify(InitializedBuildParams())
-
+    def sendInitializedNotification(implicit client: LanguageClient): Unit =
+      endpoints.Build.initialized.notify(InitializedBuildParams())
 
     def cleanup(socket: UnixDomainSocket): Task[Unit] = Task.eval {
       logger.warn("cleaning up socket!!")
@@ -131,34 +127,17 @@ object IntelliBloop {
     val initializeSequence = for {
       bloopProcess <- runBloop
       _ <- bspReadyTask
-      _ = println("bsp ready")
       socket <- initSocket
       clientServer <- initServer(socket)
       client = clientServer._1
       server = clientServer._2
       runningClientServer = startClientServer(server, socket)
-      _ = println(s"server initialized")
       init <- initializeServerReq(client)
-      _ = sendInitializedNotification(client)
     } yield {
       // TODO handle init error response
-      println(s"init result: $init")
+      sendInitializedNotification(client)
       (runningClientServer, client)
     }
-
-//    val (client, server, runningClientServer) = Await.result(initClientServerTask.runAsync, Duration.Inf)
-
-//    val initializeSequence = for {
-//      clientServer <- initClientServerTask
-//      client = clientServer._1
-//      runningClientServer = clientServer._3
-//      init <- initializeServerReq(client)
-//    } yield {
-//
-//      println(s"init result: $init")
-//      init.foreach(_ => sendInitializedNotification(client))
-//      (runningClientServer, client)
-//    }
 
     initializeSequence
   }
